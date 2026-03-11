@@ -1,4 +1,4 @@
-name: /home/chendi/miniconda3/envs/ipmgnn
+name: ipmgnn
 channels:
   - pytorch
   - pyg
@@ -102,7 +102,6 @@ dependencies:
       - setproctitle==1.3.2
       - six==1.16.0
       - smmap==5.0.1
-      - torch-scatter==2.1.1+pt20cu118
-      - torch-sparse==0.6.17+pt20cu118
+    # - torch-scatter==2.1.1+pt20cu118
+    # - torch-sparse==0.6.17+pt20cu118
       - wandb==0.15.11
-prefix: /home/chendi/miniconda3/envs/ipmgnn
