@@ -130,7 +130,13 @@ class Trainer:
         :return:
         """
         pred = vals[:, -self.ipm_steps:]
-        Ax = scatter(pred[data.A_col, :] * data.A_val[:, None], data.A_row, reduce='sum', dim=0)
+        Ax = scatter(
+        pred[data.A_col, :] * data.A_val[:, None],
+        data.A_row,
+        reduce='sum',
+        dim=0,
+        dim_size=data.rhs.shape[0],
+        )
         constraint_gap = Ax - data.rhs[:, None]
         constraint_gap = torch.relu(constraint_gap)
         return constraint_gap

@@ -3,3 +3,6 @@
 __pycache__/
 wandb/
 *.pt
+logs/
+datasets/
+results_te.csv

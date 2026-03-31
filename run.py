@@ -16,6 +16,8 @@ from data.data_preprocess import HeteroAddLaplacianEigenvectorPE, SubSample
 from data.dataset import LPDataset
 from data.utils import args_set_bool, collate_fn_ip
 from models.hetero_gnn import TripartiteHeteroGNN, BipartiteHeteroGNN
+from models.telgen_hetero_gnn import TelgenTripartiteHeteroGNN
+
 from trainer import Trainer
 
 
@@ -58,6 +60,10 @@ def args_parser():
     parser.add_argument('--share_lin_weight', type=str, default='false')
     parser.add_argument('--conv_sequence', type=str, default='cov')
 
+    parser.add_argument('--model_variant', type=str, default='ipmgnn',
+                        choices=['ipmgnn', 'telgen'])
+    parser.add_argument('--num_inner_layers', type=int, default=2)
+
     # loss related
     parser.add_argument('--loss', type=str, default='primal+objgap+constraint')
     parser.add_argument('--loss_weight_x', type=float, default=1.0)
@@ -72,12 +78,16 @@ if __name__ == '__main__':
     args = args_set_bool(vars(args))
     args = ConfigDict(args)
 
+    log_folder_name = None
+    exp_name = 'no_log_dir'
+
     if args.ckpt:
         if not os.path.isdir('logs'):
             os.mkdir('logs')
         exist_runs = [d for d in os.listdir('logs') if d.startswith('exp')]
         log_folder_name = f'logs/exp{len(exist_runs)}'
         os.mkdir(log_folder_name)
+        exp_name = os.path.basename(log_folder_name)
         with open(os.path.join(log_folder_name, 'config.yaml'), 'w') as outfile:
             yaml.dump(args.to_dict(), outfile, default_flow_style=False)
 
@@ -89,13 +99,13 @@ if __name__ == '__main__':
 
     dataset = LPDataset(args.datapath,
                         extra_path=f'{args.ipm_restarts}restarts_'
-                                         f'{args.lappe}lap_'
-                                         f'{args.ipm_steps}steps'
-                                         f'{"_upper_" + str(args.upper) if args.upper is not None else ""}',
+                                   f'{args.lappe}lap_'
+                                   f'{args.ipm_steps}steps'
+                                   f'{"_upper_" + str(args.upper) if args.upper is not None else ""}',
                         upper_bound=args.upper,
                         rand_starts=args.ipm_restarts,
                         pre_transform=Compose([HeteroAddLaplacianEigenvectorPE(k=args.lappe),
-                                                     SubSample(args.ipm_steps)]))
+                                               SubSample(args.ipm_steps)]))
 
     train_loader = DataLoader(dataset[:int(len(dataset) * 0.8)],
                               batch_size=args.batchsize,
@@ -108,54 +118,76 @@ if __name__ == '__main__':
                             num_workers=1,
                             collate_fn=collate_fn_ip)
     test_loader = DataLoader(dataset[int(len(dataset) * 0.9):],
-                            batch_size=args.batchsize,
-                            shuffle=False,
-                            num_workers=1,
-                            collate_fn=collate_fn_ip)
+                             batch_size=args.batchsize,
+                             shuffle=False,
+                             num_workers=1,
+                             collate_fn=collate_fn_ip)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # best_val_losses = []
     best_val_objgap_mean = []
     best_val_consgap_mean = []
-    # test_losses = []
     test_objgap_mean = []
     test_consgap_mean = []
 
     for run in range(args.runs):
         if args.ckpt:
             os.mkdir(os.path.join(log_folder_name, f'run{run}'))
+
         if args.bipartite:
-            model = BipartiteHeteroGNN(conv=args.conv,
-                                       in_shape=2,
-                                       pe_dim=args.lappe,
-                                       hid_dim=args.hidden,
-                                       num_conv_layers=args.num_conv_layers,
-                                       num_pred_layers=args.num_pred_layers,
-                                       num_mlp_layers=args.num_mlp_layers,
-                                       dropout=args.dropout,
-                                       share_conv_weight=args.share_conv_weight,
-                                       share_lin_weight=args.share_lin_weight,
-                                       use_norm=args.use_norm,
-                                       use_res=args.use_res).to(device)
+            model = BipartiteHeteroGNN(
+                conv=args.conv,
+                in_shape=2,
+                pe_dim=args.lappe,
+                hid_dim=args.hidden,
+                num_conv_layers=args.num_conv_layers,
+                num_pred_layers=args.num_pred_layers,
+                num_mlp_layers=args.num_mlp_layers,
+                dropout=args.dropout,
+                share_conv_weight=args.share_conv_weight,
+                share_lin_weight=args.share_lin_weight,
+                use_norm=args.use_norm,
+                use_res=args.use_res,
+            ).to(device)
         else:
-            model = TripartiteHeteroGNN(conv=args.conv,
-                                        in_shape=2,
-                                        pe_dim=args.lappe,
-                                        hid_dim=args.hidden,
-                                        num_conv_layers=args.num_conv_layers,
-                                        num_pred_layers=args.num_pred_layers,
-                                        num_mlp_layers=args.num_mlp_layers,
-                                        dropout=args.dropout,
-                                        share_conv_weight=args.share_conv_weight,
-                                        share_lin_weight=args.share_lin_weight,
-                                        use_norm=args.use_norm,
-                                        use_res=args.use_res,
-                                        conv_sequence=args.conv_sequence).to(device)
+            if args.model_variant == 'telgen':
+                model = TelgenTripartiteHeteroGNN(
+                    conv=args.conv,
+                    in_shape=2,
+                    pe_dim=args.lappe,
+                    hid_dim=args.hidden,
+                    num_outer_layers=args.num_conv_layers,   # K
+                    num_inner_layers=args.num_inner_layers,  # J
+                    num_pred_layers=args.num_pred_layers,
+                    num_mlp_layers=args.num_mlp_layers,
+                    dropout=args.dropout,
+                    use_norm=args.use_norm,
+                    use_res=args.use_res,
+                    conv_sequence=args.conv_sequence,
+                ).to(device)
+            else:
+                model = TripartiteHeteroGNN(
+                    conv=args.conv,
+                    in_shape=2,
+                    pe_dim=args.lappe,
+                    hid_dim=args.hidden,
+                    num_conv_layers=args.num_conv_layers,
+                    num_pred_layers=args.num_pred_layers,
+                    num_mlp_layers=args.num_mlp_layers,
+                    dropout=args.dropout,
+                    share_conv_weight=args.share_conv_weight,
+                    share_lin_weight=args.share_lin_weight,
+                    use_norm=args.use_norm,
+                    use_res=args.use_res,
+                    conv_sequence=args.conv_sequence,
+                ).to(device)
+
         best_model = copy.deepcopy(model.state_dict())
 
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=50, min_lr=1.e-5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=50, min_lr=1.e-5
+        )
 
         trainer = Trainer(device,
                           args.loss,
@@ -172,8 +204,6 @@ if __name__ == '__main__':
             train_loss = trainer.train(train_loader, model, optimizer)
 
             with torch.no_grad():
-                # val_loss = trainer.eval(val_loader, model, scheduler)
-                # train_gaps, train_constraint_gap = trainer.eval_metrics(train_loader, model)
                 val_gaps, val_constraint_gap = trainer.eval_metrics(val_loader, model)
 
                 # metric to cache the best model
@@ -196,52 +226,63 @@ if __name__ == '__main__':
                 break
 
             pbar.set_postfix({'train_loss': train_loss,
-                              # 'val_loss': val_loss,
                               'val_obj': cur_mean_gap,
                               'val_cons': cur_cons_gap_mean,
                               'lr': scheduler.optimizer.param_groups[0]["lr"]})
             log_dict = {'train_loss': train_loss,
-                       # 'val_loss': val_loss,
                         'val_obj_gap_last_mean': cur_mean_gap,
                         'val_cons_gap_last_mean': cur_cons_gap_mean,
-                       'lr': scheduler.optimizer.param_groups[0]["lr"]}
-            # for gnn_l in range(train_gaps.shape[1]):
-            #     log_dict[f'train_obj_gap_l{gnn_l}_mean'] = train_gaps[:, gnn_l].mean()
-                # log_dict[f'train_obj_gap_l{gnn_l}'] = wandb.Histogram(train_gaps[:, gnn_l])
-            # for gnn_l in range(val_gaps.shape[1]):
-            #     log_dict[f'val_obj_gap_l{gnn_l}_mean'] = val_gaps[:, gnn_l].mean()
-                # log_dict[f'val_obj_gap_l{gnn_l}'] = wandb.Histogram(val_gaps[:, gnn_l])
-            # for gnn_l in range(train_constraint_gap.shape[1]):
-            #     log_dict[f'train_cons_gap_l{gnn_l}_mean'] = train_constraint_gap[:, gnn_l].mean()
-                # log_dict[f'train_cons_gap_l{gnn_l}'] = wandb.Histogram(train_constraint_gap[:, gnn_l])
-            # for gnn_l in range(val_constraint_gap.shape[1]):
-            #     log_dict[f'val_cons_gap_l{gnn_l}_mean'] = val_constraint_gap[:, gnn_l].mean()
-                # log_dict[f'val_cons_gap_l{gnn_l}'] = wandb.Histogram(val_constraint_gap[:, gnn_l])
+                        'lr': scheduler.optimizer.param_groups[0]["lr"]}
             wandb.log(log_dict)
-        # best_val_losses.append(trainer.best_val_loss)
+
         best_val_objgap_mean.append(trainer.best_val_objgap)
         best_val_consgap_mean.append(trainer.best_val_consgap)
 
         model.load_state_dict(best_model)
         with torch.no_grad():
-            # test_loss = trainer.eval(test_loader, model, None)
             test_gaps, test_cons_gap = trainer.eval_metrics(test_loader, model)
-        # test_losses.append(test_loss)
-        test_objgap_mean.append(test_gaps[:, -1].mean().item())
-        test_consgap_mean.append(test_cons_gap[:, -1].mean().item())
 
-        wandb.log({'test_objgap': test_objgap_mean[-1]})
-        wandb.log({'test_consgap': test_consgap_mean[-1]})
+        run_test_objgap_mean = test_gaps[:, -1].mean().item()
+        run_test_consgap_mean = test_cons_gap[:, -1].mean().item()
+        run_test_objgap_std = test_gaps[:, -1].std().item()
+        run_test_consgap_std = test_cons_gap[:, -1].std().item()
 
+        test_objgap_mean.append(run_test_objgap_mean)
+        test_consgap_mean.append(run_test_consgap_mean)
 
-    wandb.log({
-        # 'best_val_loss': np.mean(best_val_losses),
+        wandb.log({'test_objgap': run_test_objgap_mean})
+        wandb.log({'test_consgap': run_test_consgap_mean})
+
+        if log_folder_name is not None:
+            run_metrics_path = os.path.join(log_folder_name, f'run{run}', 'test_metrics.txt')
+            with open(run_metrics_path, 'w') as f:
+                f.write(f'run: {exp_name}/run{run}\n')
+                f.write(f'model_variant: {args.model_variant}\n')
+                f.write(f'conv: {args.conv}\n')
+                f.write(f'test_objgap_mean: {run_test_objgap_mean}\n')
+                f.write(f'test_consgap_mean: {run_test_consgap_mean}\n')
+                f.write(f'test_objgap_std: {run_test_objgap_std}\n')
+                f.write(f'test_consgap_std: {run_test_consgap_std}\n')
+
+    final_metrics = {
         'best_val_objgap': np.mean(best_val_objgap_mean),
-        # 'test_loss_mean': np.mean(test_losses),
-        # 'test_loss_std': np.std(test_losses),
         'test_objgap_mean': np.mean(test_objgap_mean),
         'test_objgap_std': np.std(test_objgap_mean),
         'test_consgap_mean': np.mean(test_consgap_mean),
         'test_consgap_std': np.std(test_consgap_mean),
-        'test_hybrid_gap': np.mean(test_objgap_mean) + np.mean(test_consgap_mean),  # for the sweep
-    })
+        'test_hybrid_gap': np.mean(test_objgap_mean) + np.mean(test_consgap_mean),
+    }
+
+    wandb.log(final_metrics)
+
+    if log_folder_name is not None:
+        summary_path = os.path.join(log_folder_name, 'summary_metrics.txt')
+        with open(summary_path, 'w') as f:
+            f.write(f'model_variant: {args.model_variant}\n')
+            f.write(f'conv: {args.conv}\n')
+            f.write(f'best_val_objgap: {final_metrics["best_val_objgap"]}\n')
+            f.write(f'test_objgap_mean: {final_metrics["test_objgap_mean"]}\n')
+            f.write(f'test_objgap_std: {final_metrics["test_objgap_std"]}\n')
+            f.write(f'test_consgap_mean: {final_metrics["test_consgap_mean"]}\n')
+            f.write(f'test_consgap_std: {final_metrics["test_consgap_std"]}\n')
+            f.write(f'test_hybrid_gap: {final_metrics["test_hybrid_gap"]}\n')
