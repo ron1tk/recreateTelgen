@@ -1,11 +1,11 @@
 ## SLURM PROLOG ###############################################################
-##    Job ID : 685795
-##  Job Name : hello.sh
-##  Nodelist : node2337
-##      CPUs : 4
-##  Mem/Node : 16384 MB
+##    Job ID : 687106
+##  Job Name : run_ipm
+##  Nodelist : gpu2003
+##      CPUs : 
+##  Mem/Node : 32768 MB
 ## Directory : /oscar/home/kerdos/cs2680/recreateTelgen/batch_scripts
-##   Job Started : Wed Mar 11 04:45:57 PM EDT 2026
+##   Job Started : Wed Mar 11 06:04:41 PM EDT 2026
 ###############################################################################
-trying to run python
+trying to run script
 done!

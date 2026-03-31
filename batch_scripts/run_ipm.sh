@@ -11,8 +11,25 @@ source /users/kerdos/miniconda3/etc/profile.d/conda.sh
 
 echo "trying to run script"
 
-PYTHON_FILE=
+PYTHON_FILE=../run.py
+DATAPATH=../instance_data/
 
-conda run -n ipmgnn python -u $(PYTHON_FILE) > /users/kerdos/out.txt
+OUTDIR=/users/kerdos/out.txt
+
+conda run -n ipmgnn python -u $PYTHON_FILE --datapath $DATAPATH \
+    --ipm_alpha 0.76 \
+    --weight_decay 4.4e-7 \
+    --batchsize 512 \
+    --hidden 180 \
+    --num_pred_layers 3 \
+    --num_mlp_layers 4 \
+    --share_lin_weight false \
+    --conv_sequence cov \
+    --loss_weight_x 1. \
+    --loss_weight_obj 0.33 \
+    --loss_weight_cons 2.2 \
+    --runs 3 \
+    --lappe 0 \
+    --conv gcnconv > $OUTDIR 2>&1
 
 echo "done!"
