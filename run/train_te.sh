@@ -12,7 +12,7 @@ conda activate ipmgnn
 cd /users/rkapoor8/CS2680/recreateTelgen
 
 python run.py \
-  --datapath /users/rkapoor8/CS2680/recreateTelgen/datasets/te_small \
+  --datapath /users/rkapoor8/CS2680/recreateTelgen/datasets/fac6.py \
   --model_variant telgen \
   --conv gcnconv \
   --bipartite false \
